@@ -300,14 +300,6 @@ Dieses Tool berechnet die **raumweise Heizlast** auf Basis einer vereinfachten
 DIN-EN-12831-Logik und erweitert dies – je nach Analyse-Level – um einen
 **Heizsystem- und Wärmepumpen-Abgleich**.
 
-Neu in dieser Version:
-- Heizflächentyp als Dropdown je Raum (5 Standardtypen)
-- Automatische Vorschläge für T_VL / T_RL je Typ
-- Ampel-Logik zur Bewertung der Systemtemperatur
-- Q³: Anteil kritischer Heizflächen (% der Heizlast) als Optimierungshinweis
-"""
-)
-
 # ---------------------------------------------------------
 # Analyse-Level Q¹ / Q² / Q³
 # ---------------------------------------------------------
