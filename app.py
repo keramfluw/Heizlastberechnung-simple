@@ -381,28 +381,51 @@ st.markdown(
 st.sidebar.header("Globale Parameter")
 
 T_out = st.sidebar.number_input(
-    "Norm-Außentemperatur Tₑ (°C)",
+    "ℹ️ Norm-Außentemperatur Tₑ (°C)",
     min_value=-30.0,
     max_value=10.0,
     value=-12.0,
-    step=0.5
+    step=0.5,
+    key="norm_aussentemp",
+    help="Außentemperatur nach DIN EN 12831 für den Auslegungspunkt (kältester Bemessungstag, typischerweise negativ)."
 )
 
 default_T_set = st.sidebar.number_input(
-    "Standard-Innentemperatur Tᵢ (°C)",
+    "ℹ️ Standard-Innentemperatur Tᵢ (°C)",
     min_value=15.0,
     max_value=26.0,
     value=20.0,
-    step=0.5
+    step=0.5,
+    key="standard_innentemp",
+    help="Gewünschte Raumtemperatur als Basis für die Heizlast (z. B. 20 °C Wohnen, 18 °C Schlafen)."
 )
 
-safety_factor = st.sidebar.number_input(
-    "Sicherheitszuschlag (%)",
+safety_pct = st.sidebar.number_input(
+    "ℹ️ Sicherheitszuschlag (%)",
     min_value=0.0,
     max_value=50.0,
     value=10.0,
-    step=1.0
-) / 100.0
+    step=1.0,
+    key="sicherheitszuschlag",
+    help="Prozentualer Zuschlag zur berechneten Heizlast (z. B. Wärmebrücken, Nutzerverhalten, Reserven)."
+)
+safety_factor = safety_pct / 100.0
+
+
+# Empfohlene klimatische Basisparameter je Gebäudetyp (für Komfort-Buttons)
+recommended_params = {
+    "Neubau (Effizienzhaus)": {"T_out": -12.0, "T_in": 21.0, "safety_pct": 5.0},
+    "Bestand saniert": {"T_out": -12.0, "T_in": 20.0, "safety_pct": 10.0},
+    "Altbau unsaniert": {"T_out": -14.0, "T_in": 21.0, "safety_pct": 15.0},
+}
+
+# Beispiel-Norm-Außentemperaturen nach Klimaregion (vereinfachte Tabelle)
+climate_zones = [
+    {"Region": "Norddeutschland (Küste)", "Norm-Außentemperatur (°C)": -10},
+    {"Region": "Mitteldeutschland / NRW / Hessen", "Norm-Außentemperatur (°C)": -12},
+    {"Region": "Süddeutschland / Bayern / BaWü", "Norm-Außentemperatur (°C)": -14},
+    {"Region": "Mittelgebirge / Alpenvorland", "Norm-Außentemperatur (°C)": -16},
+]
 
 # Gebäudetyp-Profile mit typischen U-Werten
 building_profiles = {
@@ -435,6 +458,20 @@ selected_profile = st.sidebar.selectbox(
 profile = building_profiles[selected_profile]
 
 st.sidebar.markdown(
+
+# Button: empfohlene Klimaparameter je Gebäudetyp setzen
+if st.sidebar.button("Empfohlene Klimaparameter für diesen Gebäudetyp übernehmen"):
+    params = recommended_params.get(selected_profile)
+    if params:
+        st.session_state["norm_aussentemp"] = params["T_out"]
+        st.session_state["standard_innentemp"] = params["T_in"]
+        st.session_state["sicherheitszuschlag"] = params["safety_pct"]
+        st.sidebar.success("Empfohlene Werte für Norm-Außentemperatur, Innentemperatur und Sicherheitszuschlag übernommen.")
+
+# Validierung der Norm-Außentemperatur
+if st.session_state.get("norm_aussentemp", -12.0) > 5.0 or st.session_state.get("norm_aussentemp", -12.0) < -25.0:
+    st.sidebar.warning("Die gewählte Norm-Außentemperatur liegt außerhalb des üblichen Bereichs für Deutschland (ca. -10 bis -16 °C). Bitte prüfen.")
+
     f"""
 **Typische U-Werte ({selected_profile}):**
 
@@ -474,6 +511,11 @@ st.sidebar.markdown(
 # Eingabe-Tabelle für Räume
 # ---------------------------------------------------------
 st.subheader("Raumdaten je Wohnungstyp eingeben")
+
+st.markdown("#### Orientierung: Beispiel-Norm-Außentemperaturen nach Klimaregion")
+import pandas as _pd_climate
+st.table(_pd_climate.DataFrame(climate_zones))
+
 
 st.markdown(
     """
