@@ -1,16 +1,23 @@
-# Heizlastberechnung Q¹ / Q² / Q³ – Streamlit-App (Dropdown + Ampel + Option C)
+# Heizlastberechnung Q¹ / Q² / Q³ – MFH-Version mit Wohnungstypen
 
-Diese Version enthält:
+Diese Version der App ist für **Mehrfamilienhäuser** optimiert:
+
+- Räume werden repräsentativ je **Wohnungstyp** (z. B. A/B/C) erfasst
+- Für jeden Wohnungstyp wird eine **Anzahl identischer Wohneinheiten** angegeben
+- Das Tool berechnet Heizlast:
+  - je Raum
+  - je Wohnungstyp (pro WE und für alle WE dieses Typs)
+  - für das Gesamtgebäude
+
+Zusätzlich:
 
 - Heizflächentyp je Raum als Dropdown (5 Standardtypen)
 - Automatische Vorschläge für Vorlauf-/Rücklauftemperatur je Typ
-- Ampel-Logik für WP-Eignung je Raum auf Basis der mittleren Systemtemperatur
-- Q³: Wärmepumpen-Abgleich (Deckungsgrad, COP, JAZ, Strombedarf)
-- Q³: Anteil der Heizlast in nur bedingt/kritisch WP-geeigneten Bereichen (Option C),
-  als Hinweis, welcher Anteil der Heizflächen optimiert werden sollte, um auf
-  eine voll WP-taugliche Anlage zu kommen.
+- Ampel-Logik für WP-Eignung je Raum (auf Basis der mittleren Systemtemperatur)
+- Q³: Wärmepumpen-Abgleich bezogen auf das Gesamtgebäude
+- Q³: Anteil der Gebäudeheizlast in nur bedingt/kritisch WP-geeigneten Bereichen (Option C)
 
-Installation:
+## Installation
 
 ```bash
 python -m venv .venv
@@ -18,10 +25,16 @@ source .venv/bin/activate  # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Start:
+## Start
 
 ```bash
 streamlit run app.py
 ```
 
-Dann Analyse-Level wählen, Räume erfassen und das Handout als PDF/Excel exportieren.
+Dann:
+
+1. Wohnungstypen A/B/C anlegen
+2. Räume je Wohnungstyp erfassen
+3. Anzahl der jeweiligen Wohneinheiten setzen
+4. Analyse-Level wählen (Q¹/Q²/Q³)
+5. Ergebnisse als Excel oder Q-Konzept-PDF exportieren.
