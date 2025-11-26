@@ -292,7 +292,7 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🔧 Heizlastberechnung (Q¹ / Q² / Q³) – mit Heizflächentyp-Dropdown")
+st.title("🔧 Heizlastberechnung (Q¹ / Q² / Q³)")
 
 st.markdown(
     """
