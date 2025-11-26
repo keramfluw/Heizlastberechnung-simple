@@ -339,7 +339,7 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🔧 Heizlastberechnung (Q¹ / Q² / Q³) – MFH & Wohnungstypen (V5)")
+st.title("🔧 Heizlastberechnung (Q¹ / Q² / Q³) by MarekW")
 
 st.markdown(
     """
