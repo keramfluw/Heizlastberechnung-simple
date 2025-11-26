@@ -337,7 +337,7 @@ st.title("🔧 Heizlastberechnung (Q¹ / Q² / Q³) – by Marek Wulff")
 
 st.markdown(
     """
-Dieses Tool berechnet die **raumweise Heizlast** und ist nun für **Mehrfamilienhäuser** optimiert:
+Dieses Tool berechnet die **raumweise Heizlast**:
 
 - Räume werden repräsentativ je **Wohnungstyp** (A/B/C/…) erfasst  
 - Für jeden Wohnungstyp wird die **Anzahl identischer Wohneinheiten** angegeben  
