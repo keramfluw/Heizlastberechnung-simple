@@ -7,6 +7,17 @@ from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
 
 # ---------------------------------------------------------
+# Heizflächentyp-Parameter (Dropdown-Logik)
+# ---------------------------------------------------------
+HEATING_TYPE_PARAMS = {
+    "Fußbodenheizung": {"T_VL": 35.0, "T_RL": 28.0},
+    "Wand-/Deckenheizung": {"T_VL": 38.0, "T_RL": 30.0},
+    "Niedertemperatur-Heizkörper": {"T_VL": 45.0, "T_RL": 38.0},
+    "Standard-Heizkörper": {"T_VL": 60.0, "T_RL": 50.0},
+    "Altbau-Radiator": {"T_VL": 70.0, "T_RL": 60.0},
+}
+
+# ---------------------------------------------------------
 # Hilfsfunktionen für Export
 # ---------------------------------------------------------
 def create_pdf_summary(result_df, total_heating_load, T_out, default_T_set, safety_factor, analysis_level, wp_info=None):
@@ -35,7 +46,6 @@ def create_pdf_summary(result_df, total_heating_load, T_out, default_T_set, safe
     c.drawString(2 * cm, y, "Raumweise Heizlast")
     y -= 0.7 * cm
 
-    cols_basic = ["Raum", "Fläche (m²)", "Tᵢ eff (°C)", "Q_Raum (W)"]
     col_titles = ["Raum", "Fläche [m²]", "T_i [°C]", "Heizlast [W]"]
     col_x = [2 * cm, 8 * cm, 12 * cm, 16 * cm]
 
@@ -152,6 +162,7 @@ def create_pdf_summary(result_df, total_heating_load, T_out, default_T_set, safe
         jaz_est = wp_info.get("jaz_est")
         heizwaermebedarf = wp_info.get("heizwaermebedarf")
         strombedarf = wp_info.get("strombedarf")
+        critical_share = wp_info.get("critical_share")
 
         if cop_est is not None and not np.isnan(cop_est):
             c.drawString(2 * cm, y, f"geschätzter COP am Auslegungspunkt: {cop_est:,.2f}")
@@ -164,6 +175,9 @@ def create_pdf_summary(result_df, total_heating_load, T_out, default_T_set, safe
             y -= 0.5 * cm
             c.drawString(2 * cm, y, f"resultierender Strombedarf WP (geschätzt): {strombedarf:,.0f} kWh/a")
             y -= 0.7 * cm
+        if critical_share is not None:
+            c.drawString(2 * cm, y, f"Anteil Heizlast in kritisch/bedingt geeigneten Bereichen: {critical_share:,.0f} %")
+            y -= 0.7 * cm
 
         # Q-Konzept-Empfehlung (Ampellogik)
         y -= 0.3 * cm
@@ -173,7 +187,6 @@ def create_pdf_summary(result_df, total_heating_load, T_out, default_T_set, safe
         y -= 0.7 * cm
         c.setFont("Helvetica", 10)
 
-        # Bewertung anhand Deckungsgrad
         coverage = wp_info.get("coverage", 0)
         text_lines = []
 
@@ -192,7 +205,6 @@ def create_pdf_summary(result_df, total_heating_load, T_out, default_T_set, safe
                 "Dies kann zu Takten und ineffizientem Betrieb führen."
             )
 
-        # Bewertung anhand Systemtemperatur
         if weighted_avg_T is not None and not np.isnan(weighted_avg_T):
             if weighted_avg_T <= 35:
                 text_lines.append(
@@ -215,7 +227,20 @@ def create_pdf_summary(result_df, total_heating_load, T_out, default_T_set, safe
                     "und ein detaillierter hydraulischer Abgleich."
                 )
 
-        # Gesamtempfehlung als Q-Konzept-Text
+        if critical_share is not None:
+            if critical_share > 0:
+                text_lines.append(
+                    f"Der Anteil der Heizlast in nur bedingt oder kritisch für Wärmepumpen geeigneten Bereichen liegt bei "
+                    f"rund {critical_share:,.0f} %. "
+                    "Für eine voll WP-optimierte Anlage sollte in diesen Bereichen eine Anpassung der Heizflächen "
+                    "(z. B. größere Heizkörper, Flächenheizsysteme) oder eine Reduktion der Systemtemperatur geprüft werden."
+                )
+            else:
+                text_lines.append(
+                    "Nahezu die gesamte Heizlast liegt in gut oder sehr gut für Wärmepumpen geeigneten Bereichen. "
+                    "Die Anlage ist damit grundsätzlich sehr gut WP-fähig."
+                )
+
         text_lines.append(
             "Im Rahmen eines Q³-Konzeptes empfiehlt sich auf Basis dieser Bewertung eine vertiefte technische Analyse "
             "inklusive hydraulischem Abgleich, Optimierung der Heizflächen und – falls erforderlich – Anpassung des "
@@ -224,7 +249,6 @@ def create_pdf_summary(result_df, total_heating_load, T_out, default_T_set, safe
 
         for line in text_lines:
             wrapped = []
-            # einfache Zeilenumbrüche
             words = line.split(" ")
             current = ""
             for w in words:
@@ -268,7 +292,7 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🔧 Heizlastberechnung (Q¹ / Q² / Q³)")
+st.title("🔧 Heizlastberechnung (Q¹ / Q² / Q³) – mit Heizflächentyp-Dropdown")
 
 st.markdown(
     """
@@ -276,11 +300,11 @@ Dieses Tool berechnet die **raumweise Heizlast** auf Basis einer vereinfachten
 DIN-EN-12831-Logik und erweitert dies – je nach Analyse-Level – um einen
 **Heizsystem- und Wärmepumpen-Abgleich**.
 
-- Transmission: \\( Q_T = UA_{gesamt} · ΔT \\)  
-- Lüftung: \\( Q_V = 0{,}33 · n · V · ΔT \\)  
-- Heizlast Raum: \\( (Q_T + Q_V) · (1 + Sicherheitszuschlag) \\)
-
-Alle Leistungen werden in **Watt** ausgegeben.
+Neu in dieser Version:
+- Heizflächentyp als Dropdown je Raum (5 Standardtypen)
+- Automatische Vorschläge für T_VL / T_RL je Typ
+- Ampel-Logik zur Bewertung der Systemtemperatur
+- Q³: Anteil kritischer Heizflächen (% der Heizlast) als Optimierungshinweis
 """
 )
 
@@ -415,7 +439,7 @@ Für jeden Raum bitte angeben:
 - **A Wand/Dach/Boden (m²)** und zugehörige **U-Werte (W/m²K)**  
 - **A Fenster (m²)** / **U Fenster (W/m²K)**  
 - **Luftwechsel n (1/h)**: z. B. 0,4 Neubau, 0,7 saniert, 1,0 Altbau  
-- (Q²/Q³) **Heizflächentyp**, **Vorlauf- / Rücklauftemperatur**
+- (Q²/Q³) **Heizflächentyp** per Dropdown, **Vorlauf- / Rücklauftemperatur**
 """
 )
 
@@ -437,9 +461,9 @@ default_data = pd.DataFrame(
             "A Fenster (m²)": 5.0,
             "U Fenster (W/m²K)": building_default["U_fenster"],
             "Luftwechsel n (1/h)": 0.7,
-            "Heizflächentyp": "Heizkörper",
-            "T_VL (°C)": 45.0,
-            "T_RL (°C)": 35.0,
+            "Heizflächentyp": "Standard-Heizkörper",
+            "T_VL (°C)": np.nan,
+            "T_RL (°C)": np.nan,
         },
         {
             "Raum": "Schlafzimmer",
@@ -455,9 +479,9 @@ default_data = pd.DataFrame(
             "A Fenster (m²)": 3.0,
             "U Fenster (W/m²K)": building_default["U_fenster"],
             "Luftwechsel n (1/h)": 0.7,
-            "Heizflächentyp": "Heizkörper",
-            "T_VL (°C)": 45.0,
-            "T_RL (°C)": 35.0,
+            "Heizflächentyp": "Standard-Heizkörper",
+            "T_VL (°C)": np.nan,
+            "T_RL (°C)": np.nan,
         },
     ]
 )
@@ -466,7 +490,14 @@ data = st.data_editor(
     default_data,
     num_rows="dynamic",
     use_container_width=True,
-    key="raumtabelle"
+    key="raumtabelle",
+    column_config={
+        "Heizflächentyp": st.column_config.SelectboxColumn(
+            "Heizflächentyp",
+            options=list(HEATING_TYPE_PARAMS.keys()),
+            required=True,
+        )
+    }
 )
 
 # ---------------------------------------------------------
@@ -504,6 +535,17 @@ with col_wp3:
 def berechne_heizlast(df, T_out, default_T_set, safety_factor):
     df = df.copy()
 
+    # Heizflächentyp → automatische T_VL/T_RL, falls leer/NaN
+    if "Heizflächentyp" in df.columns:
+        for idx, row in df.iterrows():
+            h_type = row.get("Heizflächentyp")
+            if h_type in HEATING_TYPE_PARAMS:
+                params = HEATING_TYPE_PARAMS[h_type]
+                if np.isnan(row.get("T_VL (°C)", np.nan)):
+                    df.at[idx, "T_VL (°C)"] = params["T_VL"]
+                if np.isnan(row.get("T_RL (°C)", np.nan)):
+                    df.at[idx, "T_RL (°C)"] = params["T_RL"]
+
     # fehlende Temperaturen mit Standard belegen
     df["Tᵢ eff (°C)"] = df["Tᵢ (°C)"].fillna(default_T_set)
 
@@ -536,24 +578,31 @@ def berechne_heizlast(df, T_out, default_T_set, safety_factor):
     df["Q_ohne Zuschlag (W)"] = df["Q_T (W)"] + df["Q_V (W)"]
     df["Q_Raum (W)"] = df["Q_ohne Zuschlag (W)"] * (1.0 + safety_factor)
 
-    # mittlere Systemtemperatur je Raum (falls angegeben)
+    # mittlere Systemtemperatur je Raum
     if "T_VL (°C)" in df.columns and "T_RL (°C)" in df.columns:
         df["T_mittel (°C)"] = (df["T_VL (°C)"] + df["T_RL (°C)"]) / 2.0
     else:
         df["T_mittel (°C)"] = np.nan
 
+    # Ampel-Einstufung je Raum (WP-Eignung)
+    def classify_eignung(t_mid):
+        if np.isnan(t_mid):
+            return "unbekannt"
+        if t_mid <= 35:
+            return "sehr gut"
+        elif t_mid <= 45:
+            return "gut"
+        elif t_mid <= 50:
+            return "bedingt"
+        else:
+            return "kritisch"
+
+    df["WP-Eignung"] = df["T_mittel (°C)"].apply(classify_eignung)
+
     return df
 
 
 def schaetze_cop(wp_typ, T_mittel_system):
-    """
-    Sehr einfache COP-Heuristik:
-    - Referenz: 35 °C Systemtemperatur
-      Luft/Wasser: COP ~ 3.2
-      Sole/Wasser: COP ~ 4.0
-    - Pro 5 K höher: -0.15 COP
-    - Pro 5 K niedriger: +0.15 COP
-    """
     if T_mittel_system is None or np.isnan(T_mittel_system):
         return np.nan
 
@@ -566,7 +615,7 @@ def schaetze_cop(wp_typ, T_mittel_system):
 
     delta_T = T_mittel_system - 35.0
     cop = cop_ref - 0.15 * (delta_T / 5.0)
-    cop = max(2.0, min(cop, cop_ref + 0.6))  # grobe Klammer
+    cop = max(2.0, min(cop, cop_ref + 0.6))
     return cop
 
 
@@ -591,6 +640,13 @@ if st.button("🔍 Heizlast berechnen"):
         else:
             weighted_avg_T = np.nan
 
+        # Anteil kritischer/bedingt geeigneter Heizlast (Option C)
+        crit_mask = result["WP-Eignung"].isin(["bedingt", "kritisch"])
+        if crit_mask.any() and total_heating_load > 0:
+            critical_share = (result.loc[crit_mask, "Q_Raum (W)"].sum() / total_heating_load) * 100.0
+        else:
+            critical_share = 0.0
+
         # WP-Info vorbereiten (nur bei Q³ wirklich relevant)
         wp_info = None
         coverage = None
@@ -614,6 +670,7 @@ if st.button("🔍 Heizlast berechnen"):
                 "heizwaermebedarf": heizwaermebedarf_input,
                 "strombedarf": strombedarf,
                 "weighted_avg_T": weighted_avg_T,
+                "critical_share": critical_share,
             }
 
         cols = st.columns((2, 3))
@@ -627,10 +684,15 @@ if st.button("🔍 Heizlast berechnen"):
                 "ΔT (K)",
                 "Q_T (W)",
                 "Q_V (W)",
-                "Q_Raum (W)"
+                "Q_Raum (W)",
+                "Heizflächentyp",
+                "T_VL (°C)",
+                "T_RL (°C)",
+                "T_mittel (°C)",
+                "WP-Eignung",
             ]].copy()
 
-            for c in ["ΔT (K)", "Q_T (W)", "Q_V (W)", "Q_Raum (W)"]:
+            for c in ["ΔT (K)", "Q_T (W)", "Q_V (W)", "Q_Raum (W)", "T_VL (°C)", "T_RL (°C)", "T_mittel (°C)"]:
                 anzeige[c] = anzeige[c].round(1)
 
             st.dataframe(anzeige, use_container_width=True)
@@ -638,6 +700,10 @@ if st.button("🔍 Heizlast berechnen"):
             st.markdown(
                 f"### 🔢 Gesamtheizlast: **{total_heating_load:,.0f} W** "
                 f"(≈ {heizlast_kw:,.2f} kW)"
+            )
+            st.markdown(
+                f"🔍 Anteil Heizlast in nur **bedingt/kritisch WP-geeigneten Bereichen**: "
+                f"**{critical_share:,.0f} %**"
             )
 
             # Exporte
@@ -675,7 +741,7 @@ if st.button("🔍 Heizlast berechnen"):
         with st.expander("Details / Zwischenwerte"):
             st.dataframe(result, use_container_width=True)
 
-        # Wärmepumpen-Auswertung spezifisch in Q³ zusätzlich visuell darstellen
+        # Wärmepumpen-Auswertung in Q³
         if analysis_level.startswith("Q³") and wp_info is not None:
             st.subheader("Wärmepumpen-Abgleich (Q³) – Übersicht")
 
@@ -692,6 +758,11 @@ if st.button("🔍 Heizlast berechnen"):
                     st.metric("grobe JAZ-Schätzung", f"{jaz_est:,.2f}")
                 else:
                     st.metric("grobe JAZ-Schätzung", "n/a")
+
+            st.markdown(
+                f"🔍 Anteil Heizlast in nur **bedingt/kritisch WP-geeigneten Bereichen**: "
+                f"**{critical_share:,.0f} %**"
+            )
 
             if coverage is not None:
                 if coverage < 90:
