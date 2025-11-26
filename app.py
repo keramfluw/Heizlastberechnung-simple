@@ -17,6 +17,12 @@ HEATING_TYPE_PARAMS = {
     "Altbau-Radiator": {"T_VL": 70.0, "T_RL": 60.0},
 }
 
+TOP_TYPE_OPTIONS = [
+    "Dach gegen Außenluft",
+    "Decke gegen beheizten Raum",
+    "Decke gegen unbeheizten Raum / Speicher",
+]
+
 # ---------------------------------------------------------
 # Hilfsfunktionen für Export
 # ---------------------------------------------------------
@@ -333,20 +339,18 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🔧 Heizlastberechnung (Q¹ / Q² / Q³) – by Marek Wulff")
+st.title("🔧 Heizlastberechnung (Q¹ / Q² / Q³) – MFH & Wohnungstypen (V5)")
 
 st.markdown(
     """
-Dieses Tool berechnet die **raumweise Heizlast**:
+Diese Version ist für **Mehrfamilienhäuser** optimiert und verwendet einen
+klareren Begriff für die obere Begrenzungsfläche des Raumes:
 
-- Räume werden repräsentativ je **Wohnungstyp** (A/B/C/…) erfasst  
-- Für jeden Wohnungstyp wird die **Anzahl identischer Wohneinheiten** angegeben  
-- Das Tool berechnet Heizlast:
-  - je Raum  
-  - je Wohnungstyp (pro WE und für alle WE dieses Typs)  
-  - für das **Gesamtgebäude**  
+- statt „A Dach“ / „U Dach“ jetzt **„A oberer Abschluss“** und **„U oberer Abschluss“**
+- zusätzlich je Raum: **„Typ oberer Abschluss“** (Dach, Decke gegen beheizten Raum, Decke gegen unbeheizten Raum)
 
-Q²/Q³ ergänzen Heizflächentyp, Systemtemperatur und Wärmepumpen-Abgleich.
+Dadurch wird sauber abgebildet, ob ein Raum direkt unter dem Dach liegt oder
+nur eine Decke zum beheizten Geschoss darüber hat.
 """
 )
 
@@ -404,19 +408,19 @@ safety_factor = st.sidebar.number_input(
 building_profiles = {
     "Neubau (Effizienzhaus)": {
         "U_wand": 0.20,
-        "U_dach": 0.14,
+        "U_top": 0.14,
         "U_boden": 0.25,
         "U_fenster": 0.90,
     },
     "Bestand saniert": {
         "U_wand": 0.35,
-        "U_dach": 0.25,
+        "U_top": 0.25,
         "U_boden": 0.40,
         "U_fenster": 1.30,
     },
     "Altbau unsaniert": {
         "U_wand": 1.20,
-        "U_dach": 0.80,
+        "U_top": 0.80,
         "U_boden": 0.80,
         "U_fenster": 2.70,
     },
@@ -435,7 +439,7 @@ st.sidebar.markdown(
 **Typische U-Werte ({selected_profile}):**
 
 - Wand: **{profile["U_wand"]:.2f} W/m²K**  
-- Dach: **{profile["U_dach"]:.2f} W/m²K**  
+- Oberer Abschluss (Dach/Decke): **{profile["U_top"]:.2f} W/m²K**  
 - Boden: **{profile["U_boden"]:.2f} W/m²K**  
 - Fenster: **{profile["U_fenster"]:.2f} W/m²K**  
 """
@@ -447,7 +451,7 @@ if st.sidebar.button("Standard-U-Werte auf Tabelle anwenden"):
         df_tmp = st.session_state["raumtabelle"].copy()
         for col, key in [
             ("U Wand (W/m²K)", "U_wand"),
-            ("U Dach (W/m²K)", "U_dach"),
+            ("U oberer Abschluss (W/m²K)", "U_top"),
             ("U Boden (W/m²K)", "U_boden"),
             ("U Fenster (W/m²K)", "U_fenster"),
         ]:
@@ -461,9 +465,8 @@ if st.sidebar.button("Standard-U-Werte auf Tabelle anwenden"):
 st.sidebar.markdown(
     """
 **Hinweis:**  
-- Jeder Datensatz in der Tabelle repräsentiert einen **Raum** einer typischen Wohnung.  
-- Räume mit identischem *Wohnungstyp* werden zu einer Wohnung zusammengefasst.  
-- Über **„Anzahl WE Typ“** skalierst du den Wohnungstyp auf das Gesamtgebäude.
+- „Oberer Abschluss“ bedeutet: Dachfläche oder Decke nach oben.  
+- Wenn der Raum eine Decke zu einem darüber **beheizten** Raum hat, kann die Fläche in vielen Fällen vernachlässigt werden → Typ „Decke gegen beheizten Raum“ → A oberer Abschluss wird intern auf 0 gesetzt.
 """
 )
 
@@ -481,7 +484,8 @@ Typischer Workflow:
 3. In mindestens einer Zeile für Typ A die **Anzahl WE Typ** setzen (z. B. 6 Stück)  
 4. Optional Wohnungstyp **B** (z. B. Staffelgeschoss) etc. ergänzen  
 
-Das Tool fasst alle Räume je Wohnungstyp zusammen und rechnet auf Gebäudeebene hoch.
+„A oberer Abschluss“ beschreibt dabei die Fläche nach oben (Dach oder Decke).  
+Über „Typ oberer Abschluss“ stellst du ein, ob die Fläche als Verlustfläche gewertet wird.
 """
 )
 
@@ -498,8 +502,9 @@ default_data = pd.DataFrame(
             "Tᵢ (°C)": 21.0,
             "A Wand (m²)": 18.0,
             "U Wand (W/m²K)": building_default["U_wand"],
-            "A Dach (m²)": 0.0,
-            "U Dach (W/m²K)": building_default["U_dach"],
+            "A oberer Abschluss (m²)": 0.0,
+            "U oberer Abschluss (W/m²K)": building_default["U_top"],
+            "Typ oberer Abschluss": "Decke gegen beheizten Raum",
             "A Boden (m²)": 25.0,
             "U Boden (W/m²K)": building_default["U_boden"],
             "A Fenster (m²)": 5.0,
@@ -518,8 +523,9 @@ default_data = pd.DataFrame(
             "Tᵢ (°C)": 18.0,
             "A Wand (m²)": 12.0,
             "U Wand (W/m²K)": building_default["U_wand"],
-            "A Dach (m²)": 0.0,
-            "U Dach (W/m²K)": building_default["U_dach"],
+            "A oberer Abschluss (m²)": 0.0,
+            "U oberer Abschluss (W/m²K)": building_default["U_top"],
+            "Typ oberer Abschluss": "Decke gegen beheizten Raum",
             "A Boden (m²)": 14.0,
             "U Boden (W/m²K)": building_default["U_boden"],
             "A Fenster (m²)": 3.0,
@@ -538,8 +544,9 @@ default_data = pd.DataFrame(
             "Tᵢ (°C)": 21.0,
             "A Wand (m²)": 22.0,
             "U Wand (W/m²K)": building_default["U_wand"],
-            "A Dach (m²)": 10.0,
-            "U Dach (W/m²K)": building_default["U_dach"],
+            "A oberer Abschluss (m²)": 30.0,
+            "U oberer Abschluss (W/m²K)": building_default["U_top"],
+            "Typ oberer Abschluss": "Dach gegen Außenluft",
             "A Boden (m²)": 30.0,
             "U Boden (W/m²K)": building_default["U_boden"],
             "A Fenster (m²)": 6.0,
@@ -565,6 +572,11 @@ data = st.data_editor(
         ),
         "Wohnungstyp": st.column_config.TextColumn(
             "Wohnungstyp (z. B. A/B/C)",
+        ),
+        "Typ oberer Abschluss": st.column_config.SelectboxColumn(
+            "Typ oberer Abschluss",
+            options=TOP_TYPE_OPTIONS,
+            required=True,
         ),
     }
 )
@@ -615,6 +627,11 @@ def berechne_heizlast(df, T_out, default_T_set, safety_factor):
                 if np.isnan(row.get("T_RL (°C)", np.nan)):
                     df.at[idx, "T_RL (°C)"] = params["T_RL"]
 
+    # Typ oberer Abschluss: Decke gegen beheizten Raum -> Fläche als 0 werten
+    if "Typ oberer Abschluss" in df.columns and "A oberer Abschluss (m²)" in df.columns:
+        mask_decke_beheizt = df["Typ oberer Abschluss"] == "Decke gegen beheizten Raum"
+        df.loc[mask_decke_beheizt, "A oberer Abschluss (m²)"] = 0.0
+
     # fehlende Temperaturen mit Standard belegen
     df["Tᵢ eff (°C)"] = df["Tᵢ (°C)"].fillna(default_T_set)
 
@@ -626,13 +643,13 @@ def berechne_heizlast(df, T_out, default_T_set, safety_factor):
 
     # UA-Werte je Bauteil
     df["UA Wand (W/K)"] = df["A Wand (m²)"] * df["U Wand (W/m²K)"]
-    df["UA Dach (W/K)"] = df["A Dach (m²)"] * df["U Dach (W/m²K)"]
+    df["UA oberer Abschluss (W/K)"] = df["A oberer Abschluss (m²)"] * df["U oberer Abschluss (W/m²K)"]
     df["UA Boden (W/K)"] = df["A Boden (m²)"] * df["U Boden (W/m²K)"]
     df["UA Fenster (W/K)"] = df["A Fenster (m²)"] * df["U Fenster (W/m²K)"]
 
     df["UA gesamt (W/K)"] = (
         df["UA Wand (W/K)"]
-        + df["UA Dach (W/K)"]
+        + df["UA oberer Abschluss (W/K)"]
         + df["UA Boden (W/K)"]
         + df["UA Fenster (W/K)"]
     )
@@ -790,6 +807,9 @@ if st.button("🔍 Heizlast berechnen"):
                 "T_RL (°C)",
                 "T_mittel (°C)",
                 "WP-Eignung",
+                "A oberer Abschluss (m²)",
+                "U oberer Abschluss (W/m²K)",
+                "Typ oberer Abschluss",
             ]].copy()
 
             for c in ["ΔT (K)", "Q_T (W)", "Q_V (W)", "Q_Raum (W)", "T_VL (°C)", "T_RL (°C)", "T_mittel (°C)"]:
@@ -822,7 +842,7 @@ if st.button("🔍 Heizlast berechnen"):
             st.download_button(
                 label="📥 Ergebnisse als Excel (.xlsx)",
                 data=excel_bytes,
-                file_name="heizlast_mfh_ergebnisse.xlsx",
+                file_name="heizlast_mfh_ergebnisse_v5.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
 
@@ -835,9 +855,9 @@ if st.button("🔍 Heizlast berechnen"):
                 }), total_heating_load_building, T_out, default_T_set, safety_factor, analysis_level, wp_info
             )
             st.download_button(
-                label="📄 Ergebnisse als PDF-Handout (Q-Level & MFH)",
+                label="📄 Ergebnisse als PDF-Handout (Q-Level & MFH, V5)",
                 data=pdf_bytes,
-                file_name="heizlast_mfh_handout_qkonzept.pdf",
+                file_name="heizlast_mfh_handout_qkonzept_v5.pdf",
                 mime="application/pdf",
             )
 
@@ -849,7 +869,6 @@ if st.button("🔍 Heizlast berechnen"):
 
             if analysis_level.startswith("Q²") or analysis_level.startswith("Q³"):
                 st.markdown("#### Mittlere Systemtemperatur je Wohnungstyp (gewichteter Mittelwert)")
-                # Approx: mittlere Systemtemperatur je Typ durch Heizlastgewichtung auf Raumebene
                 if "T_mittel (°C)" in result.columns:
                     temp_type = result.copy()
                     temp_type["Q_Raum_geb (W)"] = temp_type["Q_Raum (W)"] * temp_type["Anzahl WE Typ"]
