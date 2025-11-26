@@ -333,7 +333,7 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🔧 Heizlastberechnung (Q¹ / Q² / Q³) – Wohnungstypen A/B/C mit Anzahl WE")
+st.title("🔧 Heizlastberechnung (Q¹ / Q² / Q³) – by Marek Wulff")
 
 st.markdown(
     """
