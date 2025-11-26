@@ -457,8 +457,6 @@ selected_profile = st.sidebar.selectbox(
 
 profile = building_profiles[selected_profile]
 
-st.sidebar.markdown(
-
 # Button: empfohlene Klimaparameter je Gebäudetyp setzen
 if st.sidebar.button("Empfohlene Klimaparameter für diesen Gebäudetyp übernehmen"):
     params = recommended_params.get(selected_profile)
@@ -472,6 +470,7 @@ if st.sidebar.button("Empfohlene Klimaparameter für diesen Gebäudetyp überneh
 if st.session_state.get("norm_aussentemp", -12.0) > 5.0 or st.session_state.get("norm_aussentemp", -12.0) < -25.0:
     st.sidebar.warning("Die gewählte Norm-Außentemperatur liegt außerhalb des üblichen Bereichs für Deutschland (ca. -10 bis -16 °C). Bitte prüfen.")
 
+st.sidebar.markdown(
     f"""
 **Typische U-Werte ({selected_profile}):**
 
