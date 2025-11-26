@@ -9,11 +9,12 @@ from reportlab.lib.units import cm
 # ---------------------------------------------------------
 # Hilfsfunktionen für Export
 # ---------------------------------------------------------
-def create_pdf_summary(df, total_heating_load, T_out, default_T_set, safety_factor, analysis_level):
+def create_pdf_summary(result_df, total_heating_load, T_out, default_T_set, safety_factor, analysis_level, wp_info=None):
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
 
+    # ------------- Titelseite / Kopf -------------
     y = height - 2 * cm
     c.setFont("Helvetica-Bold", 14)
     c.drawString(2 * cm, y, "Heizlastberechnung – Ergebnisübersicht")
@@ -28,23 +29,24 @@ def create_pdf_summary(df, total_heating_load, T_out, default_T_set, safety_fact
     y -= 0.5 * cm
     c.drawString(2 * cm, y, f"Sicherheitszuschlag: {safety_factor * 100:.0f} %")
 
+    # ------------- Raumweise Heizlast -------------
     y -= 1.0 * cm
     c.setFont("Helvetica-Bold", 11)
     c.drawString(2 * cm, y, "Raumweise Heizlast")
     y -= 0.7 * cm
 
-    # Tabellenkopf
-    c.setFont("Helvetica-Bold", 9)
+    cols_basic = ["Raum", "Fläche (m²)", "Tᵢ eff (°C)", "Q_Raum (W)"]
     col_titles = ["Raum", "Fläche [m²]", "T_i [°C]", "Heizlast [W]"]
     col_x = [2 * cm, 8 * cm, 12 * cm, 16 * cm]
+
+    c.setFont("Helvetica-Bold", 9)
     for title, x in zip(col_titles, col_x):
         c.drawString(x, y, title)
 
     y -= 0.5 * cm
     c.setFont("Helvetica", 9)
 
-    # Zeilen
-    for _, row in df.iterrows():
+    for _, row in result_df.iterrows():
         if y < 3 * cm:
             c.showPage()
             y = height - 2 * cm
@@ -79,6 +81,170 @@ def create_pdf_summary(df, total_heating_load, T_out, default_T_set, safety_fact
         f"Summe: {total_heating_load:,.0f} W (≈ {total_heating_load/1000:,.2f} kW)"
     )
 
+    # ------------- Q²/Q³: Systemdaten je Raum -------------
+    if analysis_level.startswith("Q²") or analysis_level.startswith("Q³"):
+        c.showPage()
+        y = height - 2 * cm
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(2 * cm, y, "Systemdaten je Raum (Q²/Q³)")
+
+        y -= 0.8 * cm
+        c.setFont("Helvetica", 9)
+        c.drawString(2 * cm, y, "Heizflächentyp und Systemtemperaturen je Raum")
+        y -= 0.6 * cm
+
+        col_titles_sys = ["Raum", "Heizfläche", "T_VL [°C]", "T_RL [°C]", "T_mittel [°C]"]
+        col_x_sys = [2 * cm, 7 * cm, 11 * cm, 14 * cm, 17 * cm]
+
+        c.setFont("Helvetica-Bold", 9)
+        for title, x in zip(col_titles_sys, col_x_sys):
+            c.drawString(x, y, title)
+        y -= 0.5 * cm
+        c.setFont("Helvetica", 9)
+
+        for _, row in result_df.iterrows():
+            if y < 3 * cm:
+                c.showPage()
+                y = height - 2 * cm
+                c.setFont("Helvetica-Bold", 12)
+                c.drawString(2 * cm, y, "Systemdaten je Raum (Fortsetzung)")
+                y -= 0.8 * cm
+                c.setFont("Helvetica-Bold", 9)
+                for title, x in zip(col_titles_sys, col_x_sys):
+                    c.drawString(x, y, title)
+                y -= 0.5 * cm
+                c.setFont("Helvetica", 9)
+
+            hf = str(row.get("Heizflächentyp", ""))
+            t_vl = row.get("T_VL (°C)", np.nan)
+            t_rl = row.get("T_RL (°C)", np.nan)
+            t_mid = row.get("T_mittel (°C)", np.nan)
+
+            c.drawString(col_x_sys[0], y, str(row["Raum"]))
+            c.drawString(col_x_sys[1], y, hf)
+            c.drawRightString(col_x_sys[2] + 1.5 * cm, y, f'{t_vl:.1f}' if not np.isnan(t_vl) else "-")
+            c.drawRightString(col_x_sys[3] + 1.5 * cm, y, f'{t_rl:.1f}' if not np.isnan(t_rl) else "-")
+            c.drawRightString(col_x_sys[4] + 1.5 * cm, y, f'{t_mid:.1f}' if not np.isnan(t_mid) else "-")
+            y -= 0.4 * cm
+
+    # ------------- Q³: Wärmepumpen-Abgleich & Empfehlung -------------
+    if analysis_level.startswith("Q³") and wp_info is not None and wp_info.get("wp_typ") != "Kein WP / andere Erzeuger":
+        c.showPage()
+        y = height - 2 * cm
+        c.setFont("Helvetica-Bold", 12)
+        c.drawString(2 * cm, y, "Wärmepumpen-Abgleich (Q³)")
+
+        y -= 0.8 * cm
+        c.setFont("Helvetica", 10)
+        c.drawString(2 * cm, y, f"Wärmepumpen-Typ: {wp_info.get('wp_typ')}")
+        y -= 0.5 * cm
+        c.drawString(2 * cm, y, f"Nennleistung WP: {wp_info.get('wp_power_kw', 0):,.1f} kW")
+        y -= 0.5 * cm
+        c.drawString(2 * cm, y, f"Deckungsgrad bei Norm-Heizlast: {wp_info.get('coverage', 0):,.0f} %")
+        y -= 0.5 * cm
+
+        weighted_avg_T = wp_info.get("weighted_avg_T")
+        if weighted_avg_T is not None and not np.isnan(weighted_avg_T):
+            c.drawString(2 * cm, y, f"gewichtete mittlere Systemtemperatur: {weighted_avg_T:,.1f} °C")
+            y -= 0.5 * cm
+
+        cop_est = wp_info.get("cop_est")
+        jaz_est = wp_info.get("jaz_est")
+        heizwaermebedarf = wp_info.get("heizwaermebedarf")
+        strombedarf = wp_info.get("strombedarf")
+
+        if cop_est is not None and not np.isnan(cop_est):
+            c.drawString(2 * cm, y, f"geschätzter COP am Auslegungspunkt: {cop_est:,.2f}")
+            y -= 0.5 * cm
+        if jaz_est is not None and not np.isnan(jaz_est):
+            c.drawString(2 * cm, y, f"grobe JAZ-Schätzung: {jaz_est:,.2f}")
+            y -= 0.5 * cm
+        if heizwaermebedarf is not None and heizwaermebedarf > 0 and strombedarf is not None and not np.isnan(strombedarf):
+            c.drawString(2 * cm, y, f"jährlicher Heizwärmebedarf: {heizwaermebedarf:,.0f} kWh/a")
+            y -= 0.5 * cm
+            c.drawString(2 * cm, y, f"resultierender Strombedarf WP (geschätzt): {strombedarf:,.0f} kWh/a")
+            y -= 0.7 * cm
+
+        # Q-Konzept-Empfehlung (Ampellogik)
+        y -= 0.3 * cm
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(2 * cm, y, "Q-Konzept – Empfehlung")
+
+        y -= 0.7 * cm
+        c.setFont("Helvetica", 10)
+
+        # Bewertung anhand Deckungsgrad
+        coverage = wp_info.get("coverage", 0)
+        text_lines = []
+
+        if coverage < 90:
+            text_lines.append(
+                "Die Wärmepumpe ist tendenziell unterdimensioniert (< 90 % Deckung). "
+                "Ein bivalenter Betrieb oder eine höhere Nennleistung sollte geprüft werden."
+            )
+        elif 90 <= coverage <= 120:
+            text_lines.append(
+                "Die Wärmepumpe liegt im üblichen Auslegungsbereich (ca. 90–120 % der Norm-Heizlast)."
+            )
+        else:
+            text_lines.append(
+                "Die Wärmepumpe ist tendenziell überdimensioniert (> 120 % Deckung). "
+                "Dies kann zu Takten und ineffizientem Betrieb führen."
+            )
+
+        # Bewertung anhand Systemtemperatur
+        if weighted_avg_T is not None and not np.isnan(weighted_avg_T):
+            if weighted_avg_T <= 35:
+                text_lines.append(
+                    "Die mittlere Systemtemperatur ≤ 35 °C deutet auf eine sehr gute Eignung für den Wärmepumpenbetrieb hin "
+                    "(typisch Fußbodenheizung / große Heizflächen)."
+                )
+            elif 35 < weighted_avg_T <= 45:
+                text_lines.append(
+                    "Die mittlere Systemtemperatur zwischen 35–45 °C ist gut für einen effizienten Wärmepumpenbetrieb geeignet."
+                )
+            elif 45 < weighted_avg_T <= 50:
+                text_lines.append(
+                    "Die mittlere Systemtemperatur von 45–50 °C ist nur bedingt optimal. "
+                    "Eine Optimierung der Heizflächen, des hydraulischen Abgleichs oder der Heizkurve sollte geprüft werden."
+                )
+            else:
+                text_lines.append(
+                    "Die mittlere Systemtemperatur > 50 °C ist kritisch für einen effizienten Wärmepumpenbetrieb. "
+                    "Empfohlen werden Maßnahmen wie Heizkörpertausch in Teilbereichen, Reduktion der Vorlauftemperatur "
+                    "und ein detaillierter hydraulischer Abgleich."
+                )
+
+        # Gesamtempfehlung als Q-Konzept-Text
+        text_lines.append(
+            "Im Rahmen eines Q³-Konzeptes empfiehlt sich auf Basis dieser Bewertung eine vertiefte technische Analyse "
+            "inklusive hydraulischem Abgleich, Optimierung der Heizflächen und – falls erforderlich – Anpassung des "
+            "Wärmeerzeugerkonzeptes (z. B. bivalente Systeme, Pufferspeicher, Kombination mit PV und Speichern)."
+        )
+
+        for line in text_lines:
+            wrapped = []
+            # einfache Zeilenumbrüche
+            words = line.split(" ")
+            current = ""
+            for w in words:
+                test_line = current + (" " if current else "") + w
+                if c.stringWidth(test_line, "Helvetica", 10) < (width - 4 * cm):
+                    current = test_line
+                else:
+                    wrapped.append(current)
+                    current = w
+            if current:
+                wrapped.append(current)
+
+            for wl in wrapped:
+                if y < 3 * cm:
+                    c.showPage()
+                    y = height - 2 * cm
+                    c.setFont("Helvetica", 10)
+                c.drawString(2 * cm, y, wl)
+                y -= 0.5 * cm
+
     c.showPage()
     c.save()
     pdf_data = buffer.getvalue()
@@ -108,7 +274,7 @@ st.markdown(
     """
 Dieses Tool berechnet die **raumweise Heizlast** auf Basis einer vereinfachten 
 DIN-EN-12831-Logik und erweitert dies – je nach Analyse-Level – um einen
-einfachen **Heizsystem- und Wärmepumpen-Abgleich**.
+**Heizsystem- und Wärmepumpen-Abgleich**.
 
 - Transmission: \\( Q_T = UA_{gesamt} · ΔT \\)  
 - Lüftung: \\( Q_V = 0{,}33 · n · V · ΔT \\)  
@@ -135,7 +301,7 @@ st.markdown(
     """
 - **Q¹**: raumweise Heizlast, Gebäudetyp-Profil, Export (Excel/PDF)  
 - **Q²**: zusätzlich Heizflächentyp & Vor-/Rücklauftemperatur je Raum  
-- **Q³**: zusätzlich einfacher Wärmepumpen-Leistungsabgleich (Über-/Unterdeckung, COP-Schätzung)
+- **Q³**: zusätzlich Wärmepumpen-Auslegung, COP/JAZ-Schätzung & Q-Konzept-Empfehlung
 """
 )
 
@@ -261,7 +427,7 @@ default_data = pd.DataFrame(
             "Raum": "Wohnzimmer",
             "Fläche (m²)": 25.0,
             "Raumhöhe (m)": 2.5,
-            "Tᵢ (°C)": np.nan,  # nutzt dann Standard
+            "Tᵢ (°C)": np.nan,
             "A Wand (m²)": 20.0,
             "U Wand (W/m²K)": building_default["U_wand"],
             "A Dach (m²)": 10.0,
@@ -302,6 +468,35 @@ data = st.data_editor(
     use_container_width=True,
     key="raumtabelle"
 )
+
+# ---------------------------------------------------------
+# Wärmepumpen-Parameter (für Q³ relevant, aber immer editierbar)
+# ---------------------------------------------------------
+st.subheader("Wärmepumpen-Parameter (für Q³ relevant)")
+
+col_wp1, col_wp2, col_wp3 = st.columns(3)
+with col_wp1:
+    wp_typ = st.selectbox(
+        "Wärmepumpen-Typ",
+        options=["Luft/Wasser", "Sole/Wasser", "Kein WP / andere Erzeuger"],
+        index=0
+    )
+with col_wp2:
+    wp_power_kw_input = st.number_input(
+        "Nennleistung Wärmepumpe bei Auslegungspunkt (kW)",
+        min_value=1.0,
+        max_value=500.0,
+        value=8.0,
+        step=0.5
+    )
+with col_wp3:
+    heizwaermebedarf_input = st.number_input(
+        "geschätzter jährlicher Heizwärmebedarf (kWh/a)",
+        min_value=0.0,
+        max_value=1_000_000.0,
+        value=20000.0,
+        step=1000.0
+    )
 
 # ---------------------------------------------------------
 # Berechnung
@@ -359,7 +554,7 @@ def schaetze_cop(wp_typ, T_mittel_system):
     - Pro 5 K höher: -0.15 COP
     - Pro 5 K niedriger: +0.15 COP
     """
-    if np.isnan(T_mittel_system):
+    if T_mittel_system is None or np.isnan(T_mittel_system):
         return np.nan
 
     if wp_typ == "Luft/Wasser":
@@ -379,6 +574,48 @@ if st.button("🔍 Heizlast berechnen"):
     try:
         result = berechne_heizlast(data, T_out, default_T_set, safety_factor)
 
+        # Gesamtheizlast
+        total_heating_load = result["Q_Raum (W)"].sum()
+        heizlast_kw = total_heating_load / 1000.0 if total_heating_load > 0 else 0.0
+
+        # gewichtete Systemtemperatur
+        if "T_mittel (°C)" in result.columns:
+            mask = result["T_mittel (°C)"].notna() & (result["Q_Raum (W)"] > 0)
+            if mask.any():
+                weighted_avg_T = (
+                    (result.loc[mask, "T_mittel (°C)"] * result.loc[mask, "Q_Raum (W)"]).sum()
+                    / result.loc[mask, "Q_Raum (W)"].sum()
+                )
+            else:
+                weighted_avg_T = np.nan
+        else:
+            weighted_avg_T = np.nan
+
+        # WP-Info vorbereiten (nur bei Q³ wirklich relevant)
+        wp_info = None
+        coverage = None
+        cop_est = None
+        jaz_est = None
+        heizwaermebedarf = heizwaermebedarf_input
+        strombedarf = None
+
+        if analysis_level.startswith("Q³") and heizlast_kw > 0 and wp_typ != "Kein WP / andere Erzeuger":
+            coverage = (wp_power_kw_input / heizlast_kw) * 100.0
+            cop_est = schaetze_cop(wp_typ, weighted_avg_T)
+            jaz_est = cop_est - 0.3 if not np.isnan(cop_est) else np.nan
+            if jaz_est is not None and not np.isnan(jaz_est) and jaz_est > 0 and heizwaermebedarf_input > 0:
+                strombedarf = heizwaermebedarf_input / jaz_est
+            wp_info = {
+                "wp_typ": wp_typ,
+                "wp_power_kw": wp_power_kw_input,
+                "coverage": coverage,
+                "cop_est": cop_est,
+                "jaz_est": jaz_est,
+                "heizwaermebedarf": heizwaermebedarf_input,
+                "strombedarf": strombedarf,
+                "weighted_avg_T": weighted_avg_T,
+            }
+
         cols = st.columns((2, 3))
         with cols[0]:
             st.subheader("Ergebnisse je Raum")
@@ -393,16 +630,14 @@ if st.button("🔍 Heizlast berechnen"):
                 "Q_Raum (W)"
             ]].copy()
 
-            # etwas runden
             for c in ["ΔT (K)", "Q_T (W)", "Q_V (W)", "Q_Raum (W)"]:
                 anzeige[c] = anzeige[c].round(1)
 
             st.dataframe(anzeige, use_container_width=True)
 
-            total_heating_load = result["Q_Raum (W)"].sum()
             st.markdown(
                 f"### 🔢 Gesamtheizlast: **{total_heating_load:,.0f} W** "
-                f"(≈ {total_heating_load/1000:,.2f} kW)"
+                f"(≈ {heizlast_kw:,.2f} kW)"
             )
 
             # Exporte
@@ -415,12 +650,12 @@ if st.button("🔍 Heizlast berechnen"):
             )
 
             pdf_bytes = create_pdf_summary(
-                anzeige, total_heating_load, T_out, default_T_set, safety_factor, analysis_level
+                result, total_heating_load, T_out, default_T_set, safety_factor, analysis_level, wp_info
             )
             st.download_button(
-                label="📄 Ergebnisse als PDF-Handout",
+                label="📄 Ergebnisse als PDF-Handout (Q-Level-spezifisch)",
                 data=pdf_bytes,
-                file_name="heizlast_handout.pdf",
+                file_name="heizlast_handout_qkonzept.pdf",
                 mime="application/pdf",
             )
 
@@ -428,10 +663,9 @@ if st.button("🔍 Heizlast berechnen"):
             st.subheader("Visualisierung Heizlast je Raum (W)")
             plot_df = result[["Raum", "Q_Raum (W)"]].copy()
             plot_df = plot_df.set_index("Raum")
-
             st.bar_chart(plot_df)
 
-            if analysis_level in ["Q² – inkl. Heizflächentyp & Systemtemperaturen", "Q³ – inkl. Wärmepumpen-Abgleich"]:
+            if analysis_level.startswith("Q²") or analysis_level.startswith("Q³"):
                 st.markdown("#### Mittlere Systemtemperatur je Raum")
                 if "T_mittel (°C)" in result.columns:
                     temp_df = result[["Raum", "T_mittel (°C)"]].copy()
@@ -441,86 +675,25 @@ if st.button("🔍 Heizlast berechnen"):
         with st.expander("Details / Zwischenwerte"):
             st.dataframe(result, use_container_width=True)
 
-        # -------------------------------------------------
-        # Wärmepumpen-Abgleich (Q³)
-        # -------------------------------------------------
-        if analysis_level == "Q³ – inkl. Wärmepumpen-Abgleich":
-            st.subheader("Wärmepumpen-Abgleich (Q³)")
+        # Wärmepumpen-Auswertung spezifisch in Q³ zusätzlich visuell darstellen
+        if analysis_level.startswith("Q³") and wp_info is not None:
+            st.subheader("Wärmepumpen-Abgleich (Q³) – Übersicht")
 
-            heizlast_kw = total_heating_load / 1000.0 if total_heating_load > 0 else 0.0
-
-            # gewichtet nach Heizlast mittlere Systemtemperatur bestimmen
-            if "T_mittel (°C)" in result.columns:
-                mask = result["T_mittel (°C)"].notna() & (result["Q_Raum (W)"] > 0)
-                if mask.any():
-                    weighted_avg_T = (
-                        (result.loc[mask, "T_mittel (°C)"] * result.loc[mask, "Q_Raum (W)"]).sum()
-                        / result.loc[mask, "Q_Raum (W)"].sum()
-                    )
+            col_res1, col_res2, col_res3 = st.columns(3)
+            with col_res1:
+                st.metric("Deckungsgrad bei Normlast", f"{coverage:,.0f} %")
+            with col_res2:
+                if cop_est is not None and not np.isnan(cop_est):
+                    st.metric("geschätzter COP am Auslegungspunkt", f"{cop_est:,.2f}")
                 else:
-                    weighted_avg_T = np.nan
-            else:
-                weighted_avg_T = np.nan
-
-            col_wp1, col_wp2 = st.columns(2)
-            with col_wp1:
-                st.markdown("**Heizsystem-Übersicht**")
-                st.write(f"Berechnete Gesamtheizlast: **{heizlast_kw:,.2f} kW**")
-                if not np.isnan(weighted_avg_T):
-                    st.write(f"Gewichtete mittlere Systemtemperatur: **{weighted_avg_T:,.1f} °C**")
+                    st.metric("geschätzter COP am Auslegungspunkt", "n/a")
+            with col_res3:
+                if jaz_est is not None and not np.isnan(jaz_est):
+                    st.metric("grobe JAZ-Schätzung", f"{jaz_est:,.2f}")
                 else:
-                    st.write("Gewichtete mittlere Systemtemperatur: nicht verfügbar (bitte T_VL/T_RL prüfen).")
+                    st.metric("grobe JAZ-Schätzung", "n/a")
 
-            with col_wp2:
-                st.markdown("**Wärmepumpen-Parameter**")
-                wp_typ = st.selectbox(
-                    "Wärmepumpen-Typ",
-                    options=["Luft/Wasser", "Sole/Wasser", "Kein WP / andere Erzeuger"],
-                    index=0
-                )
-
-                default_wp_power = max(3.0, round(heizlast_kw * 1.1, 1)) if heizlast_kw > 0 else 8.0
-
-                wp_power_kw = st.number_input(
-                    "Nennleistung Wärmepumpe bei Auslegungspunkt (kW)",
-                    min_value=1.0,
-                    max_value=500.0,
-                    value=default_wp_power,
-                    step=0.5
-                )
-
-                heizwaermebedarf = st.number_input(
-                    "geschätzter jährlicher Heizwärmebedarf (kWh/a)",
-                    min_value=0.0,
-                    max_value=1_000_000.0,
-                    value=float(round(heizlast_kw * 1800, 0)) if heizlast_kw > 0 else 20000.0,
-                    step=1000.0
-                )
-
-            if wp_typ != "Kein WP / andere Erzeuger" and heizlast_kw > 0:
-                coverage = (wp_power_kw / heizlast_kw) * 100.0
-                cop_est = schaetze_cop(wp_typ, weighted_avg_T) if not np.isnan(weighted_avg_T) else np.nan
-                jaz_est = cop_est - 0.3 if not np.isnan(cop_est) else np.nan
-                jaz_est = max(1.0, jaz_est) if not np.isnan(jaz_est) else np.nan
-
-                st.markdown("---")
-                st.markdown("### Bewertung Wärmepumpen-Auslegung")
-
-                col_res1, col_res2, col_res3 = st.columns(3)
-                with col_res1:
-                    st.metric("Deckungsgrad bei Normlast", f"{coverage:,.0f} %")
-                with col_res2:
-                    if not np.isnan(cop_est):
-                        st.metric("geschätzter COP am Auslegungspunkt", f"{cop_est:,.2f}")
-                    else:
-                        st.metric("geschätzter COP am Auslegungspunkt", "n/a")
-                with col_res3:
-                    if not np.isnan(jaz_est):
-                        st.metric("grobe JAZ-Schätzung", f"{jaz_est:,.2f}")
-                    else:
-                        st.metric("grobe JAZ-Schätzung", "n/a")
-
-                # Einordnung Deckungsgrad
+            if coverage is not None:
                 if coverage < 90:
                     st.warning(
                         "Die Wärmepumpe ist **tendenziell unterdimensioniert** "
@@ -535,22 +708,18 @@ if st.button("🔍 Heizlast berechnen"):
                 else:
                     st.info(
                         "Die Wärmepumpe ist **tendenziell überdimensioniert** "
-                        "(> 120 % der Norm-Heizlast). Das kann zu Takten und "
+                        "(> 120 % Deckung der Norm-Heizlast). Das kann zu Takten und "
                         "ineffizientem Betrieb führen."
                     )
 
-                if not np.isnan(cop_est) and heizwaermebedarf > 0:
-                    strombedarf = heizwaermebedarf / jaz_est if jaz_est > 0 else np.nan
-
-                    st.markdown("### Grobe Strombedarfsschätzung")
-                    st.write(
-                        f"- Heizwärmebedarf: **{heizwaermebedarf:,.0f} kWh/a**  \n"
-                        f"- Daraus resultierender **Strombedarf WP** (auf Basis JAZ-Schätzung): "
-                        f"**{strombedarf:,.0f} kWh/a**"
-                    )
-
-            elif wp_typ == "Kein WP / andere Erzeuger":
-                st.info("Wärmepumpen-Abgleich übersprungen (Typ: Kein WP / andere Erzeuger).")
+            if jaz_est is not None and not np.isnan(jaz_est) and heizwaermebedarf_input > 0:
+                strombedarf = heizwaermebedarf_input / jaz_est
+                st.markdown("### Grobe Strombedarfsschätzung")
+                st.write(
+                    f"- Heizwärmebedarf: **{heizwaermebedarf_input:,.0f} kWh/a**  \n"
+                    f"- Daraus resultierender **Strombedarf WP** (auf Basis JAZ-Schätzung): "
+                    f"**{strombedarf:,.0f} kWh/a**"
+                )
 
     except Exception as e:
         st.error(f"Fehler bei der Berechnung: {e}")
