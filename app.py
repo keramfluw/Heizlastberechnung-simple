@@ -339,7 +339,7 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🔧 Heizlastberechnung (Q¹ / Q² / Q³) by MarekW")
+st.title("🔧 Heizlastberechnung (Q / Q² / Q³) by MarekW")
 
 st.markdown(
     """
